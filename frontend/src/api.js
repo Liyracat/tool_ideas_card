@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8001";
 
 export async function fetchRandomIdea(status = "active") {
   const response = await fetch(`${API_BASE}/api/ideas/random?status=${status}`);
@@ -71,4 +71,5 @@ export async function updateStatus(id, status) {
     throw new Error("Status update failed");
   }
   return response.json();
+
 }
