@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from typing import Iterable
+from collections.abc import Iterable
 
 DEFAULT_DB_PATH = os.getenv("IDEA_DB_PATH", os.path.join(os.getcwd(), "ideas.db"))
 
@@ -78,14 +78,22 @@ def init_db() -> None:
         conn.close()
 
 
-def fetch_all(conn: sqlite3.Connection, query: str, params: Iterable | None = None):
+def fetch_all(
+    conn: sqlite3.Connection,
+    query: str,
+    params: Iterable | None = None,
+) -> list[sqlite3.Row]:
     cursor = conn.execute(query, params or [])
     rows = cursor.fetchall()
     cursor.close()
     return rows
 
 
-def fetch_one(conn: sqlite3.Connection, query: str, params: Iterable | None = None):
+def fetch_one(
+    conn: sqlite3.Connection,
+    query: str,
+    params: Iterable | None = None,
+) -> sqlite3.Row | None:
     cursor = conn.execute(query, params or [])
     row = cursor.fetchone()
     cursor.close()

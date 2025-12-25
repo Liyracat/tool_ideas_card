@@ -1,6 +1,4 @@
-from __future__ import annotations
-
-from typing import List, Optional
+from collections.abc import Sequence
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,23 +20,23 @@ app.add_middleware(
 class IdeaLink(BaseModel):
     idea_id: int
     body: str
-    tags: List[str]
+    tags: list[str]
 
 
 class Idea(BaseModel):
     idea_id: int
     body: str
     status: str
-    tags: List[str] = Field(default_factory=list)
-    blockers: List[str] = Field(default_factory=list)
-    born_with: List[IdeaLink] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    born_with: list[IdeaLink] = Field(default_factory=list)
 
 
 class IdeaUpdate(BaseModel):
     body: str
-    tags: List[str] = Field(default_factory=list)
-    blockers: List[str] = Field(default_factory=list)
-    born_with_ids: List[int] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    born_with_ids: list[int] = Field(default_factory=list)
 
 
 class IdeaCreate(IdeaUpdate):
@@ -48,7 +46,7 @@ class IdeaCreate(IdeaUpdate):
 class IdeaSearchResult(BaseModel):
     idea_id: int
     body: str
-    tags: List[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
 
 
 @app.on_event("startup")
@@ -92,7 +90,7 @@ def serialize_idea(conn, idea_row) -> Idea:
         """,
         (idea_id,),
     )
-    born_with: List[IdeaLink] = []
+    born_with: list[IdeaLink] = []
     for link in link_rows:
         linked_tags = fetch_all(
             conn,
@@ -122,7 +120,7 @@ def serialize_idea(conn, idea_row) -> Idea:
     )
 
 
-def upsert_tags(conn, idea_id: int, tags: List[str]) -> None:
+def upsert_tags(conn, idea_id: int, tags: Sequence[str]) -> None:
     conn.execute("DELETE FROM idea_tags WHERE idea_id = ?", (idea_id,))
     normalized = [tag.strip() for tag in tags if tag.strip()]
     for tag in normalized:
@@ -137,7 +135,7 @@ def upsert_tags(conn, idea_id: int, tags: List[str]) -> None:
         )
 
 
-def replace_blockers(conn, idea_id: int, blockers: List[str]) -> None:
+def replace_blockers(conn, idea_id: int, blockers: Sequence[str]) -> None:
     conn.execute("DELETE FROM idea_blockers WHERE idea_id = ?", (idea_id,))
     normalized = [blocker.strip() for blocker in blockers if blocker.strip()]
     for idx, blocker in enumerate(normalized):
@@ -147,7 +145,7 @@ def replace_blockers(conn, idea_id: int, blockers: List[str]) -> None:
         )
 
 
-def replace_links(conn, idea_id: int, born_with_ids: List[int]) -> None:
+def replace_links(conn, idea_id: int, born_with_ids: Sequence[int]) -> None:
     conn.execute(
         "DELETE FROM idea_links WHERE link_type = 'born_with' AND (idea_id = ? OR linked_idea_id = ?)",
         (idea_id, idea_id),
@@ -246,17 +244,17 @@ def update_status(idea_id: int, status: str = Query(..., pattern="^(active|execu
         conn.close()
 
 
-@app.get("/api/ideas/search", response_model=List[IdeaSearchResult])
+@app.get("/api/ideas/search", response_model=list[IdeaSearchResult])
 def search_ideas(
-    keyword: Optional[str] = None,
-    tags: Optional[str] = None,
+    keyword: str | None = None,
+    tags: str | None = None,
     status: str = "active",
-) -> List[IdeaSearchResult]:
+) -> list[IdeaSearchResult]:
     conn = get_connection()
     try:
         tag_list = [tag.strip() for tag in tags.split(",")] if tags else []
         tag_list = [tag for tag in tag_list if tag]
-        params: List = [status]
+        params: list = [status]
         query = "SELECT DISTINCT i.idea_id, i.body FROM ideas i WHERE i.status = ?"
         if keyword:
             query += " AND i.body LIKE ?"
@@ -271,7 +269,7 @@ def search_ideas(
                 params.append(tag)
         query += " ORDER BY i.updated_at DESC"
         rows = fetch_all(conn, query, params)
-        results: List[IdeaSearchResult] = []
+        results: list[IdeaSearchResult] = []
         for row in rows:
             tag_rows = fetch_all(
                 conn,
@@ -296,9 +294,9 @@ def search_ideas(
         conn.close()
 
 
-@app.get("/api/ideas/suggest", response_model=List[IdeaSearchResult])
+@app.get("/api/ideas/suggest", response_model=list[IdeaSearchResult])
 def suggest_ideas(
-    keyword: Optional[str] = None,
-    tags: Optional[str] = None,
-) -> List[IdeaSearchResult]:
+    keyword: str | None = None,
+    tags: str | None = None,
+) -> list[IdeaSearchResult]:
     return search_ideas(keyword=keyword, tags=tags, status="active")
