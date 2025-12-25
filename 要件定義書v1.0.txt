@@ -1,0 +1,112 @@
+【概要】
+FastAPI + Reactのローカルアイディア蓄積・閲覧ツールです。過去に出したアイディアをカードにしランダムで表示することで、化学反応を狙うツール。
+
+【構成】
+・backend/: FastAPI アプリケーション（uvicorn で起動）
+・frontend/: Vite + React フロントエンド
+・DB: SQLite（FTS5 利用を想定）。既定の DB パスは環境変数で指定します。
+
+【画面要件】
+①トップ画面
+・カード情報（body・タグ・blockers・born_with)（トップ表示するたびにランダムで新しいカードが表示される）→クリックでカード編集画面に遷移
+・ピン留めボタン→ランダム表示モードと固定表示モードに切り替える
+・次のカードボタン
+・検索ボタン→検索画面に遷移
+・追加ボタン→追加画面に遷移
+
+②検索画面
+・検索フォーム（キーワード検索・タグ検索・ステータス）
+・カード情報（body2行・タグ)→クリックでカード編集画面に遷移
+・戻るボタン→トップ画面に戻る
+
+③カード編集画面
+・ボタン群
+　　・保存→UPDATEを行う→保存しましたテキストを5秒だけ表示させて消える(画面遷移しない)
+　　・実行済み→status:execute＆UPDATEを行う(画面遷移しない)
+　　・辞書移行済み→status:transfer＆UPDATEを行う(画面遷移しない)
+　　・削除→status:deleted→戻るボタン押下時と同じ挙動
+　　・戻る→前画面がトップならトップ画面に戻る、それ以外なら検索画面に戻る
+・入力フォーム
+　　・body: "string"
+　　・tags: ["string"]（カンマ区切り）
+　　・blockers: ["string"]（フィールドの追加・削除ボタン付き）
+・born_withボタン→born_withを追加するモーダルを表示
+　　・モーダル内
+　　　　・キーワード検索・タグ検索（ステータスはアクティブオンリー表示）
+　　　　・サジェスト表示→クリックで追加（双方リンク）
+・born_with表示フォーム
+　　・紐づいているideaのカード編集画面を表示するためのリンク
+　　・紐づいているideaのリンク削除ボタン
+
+
+【テーブル定義】
+-- =========================================================
+-- Core tables
+-- =========================================================
+PRAGMA foreign_keys = ON;
+
+-- =========================================================
+-- ideas
+-- =========================================================
+CREATE TABLE IF NOT EXISTS ideas (
+  idea_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+  body        TEXT NOT NULL,
+  status      TEXT NOT NULL DEFAULT 'active', -- active/execute/transfer/deleted
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_ideas_status
+  ON ideas(status);
+
+-- LIKE検索用（必要なら）
+CREATE INDEX IF NOT EXISTS idx_ideas_body
+  ON ideas(body);
+
+-- =========================================================
+-- tags
+-- =========================================================
+CREATE TABLE IF NOT EXISTS tags (
+  tag_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL,
+  path       TEXT NOT NULL DEFAULT '',
+  parent_id  INTEGER REFERENCES tags(tag_id) ON DELETE SET NULL,
+  UNIQUE(name, path)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tags_path
+  ON tags(path);
+
+CREATE TABLE IF NOT EXISTS idea_tags (
+  idea_id  INTEGER NOT NULL REFERENCES ideas(idea_id) ON DELETE CASCADE,
+  tag_id   INTEGER NOT NULL REFERENCES tags(tag_id)  ON DELETE CASCADE,
+  PRIMARY KEY (idea_id, tag_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_idea_tags_tag
+  ON idea_tags(tag_id);
+
+-- =========================================================
+-- blockers (可変配列をテーブルで保持)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS idea_blockers (
+  idea_id   INTEGER NOT NULL REFERENCES ideas(idea_id) ON DELETE CASCADE,
+  ord       INTEGER NOT NULL,   -- 表示順（0,1,2...）
+  text      TEXT NOT NULL,
+  PRIMARY KEY (idea_id, ord)
+);
+
+-- =========================================================
+-- born_with links (ideas <-> ideas)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS idea_links (
+  idea_id        INTEGER NOT NULL REFERENCES ideas(idea_id) ON DELETE CASCADE,
+  linked_idea_id INTEGER NOT NULL REFERENCES ideas(idea_id) ON DELETE CASCADE,
+  link_type      TEXT NOT NULL DEFAULT 'born_with', -- 将来増やしてもいい
+  created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  PRIMARY KEY (idea_id, linked_idea_id, link_type),
+  CHECK (idea_id <> linked_idea_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_idea_links_linked
+  ON idea_links(linked_idea_id, link_type);
