@@ -178,6 +178,64 @@ def get_random_idea(status: str = "active") -> Idea:
         conn.close()
 
 
+@app.get("/api/ideas/search", response_model=list[IdeaSearchResult])
+def search_ideas(
+    keyword: str | None = None,
+    tags: str | None = None,
+    status: str = "active",
+) -> list[IdeaSearchResult]:
+    conn = get_connection()
+    try:
+        tag_list = [tag.strip() for tag in tags.split(",")] if tags else []
+        tag_list = [tag for tag in tag_list if tag]
+        params: list = [status]
+        query = "SELECT DISTINCT i.idea_id, i.body FROM ideas i WHERE i.status = ?"
+        if keyword:
+            query += " AND i.body LIKE ?"
+            params.append(f"%{keyword}%")
+        if tag_list:
+            for tag in tag_list:
+                query += (
+                    " AND EXISTS ("
+                    "SELECT 1 FROM idea_tags it JOIN tags t ON t.tag_id = it.tag_id "
+                    "WHERE it.idea_id = i.idea_id AND t.name = ?)"
+                )
+                params.append(tag)
+        query += " ORDER BY i.updated_at DESC"
+        rows = fetch_all(conn, query, params)
+        results: list[IdeaSearchResult] = []
+        for row in rows:
+            tag_rows = fetch_all(
+                conn,
+                """
+                SELECT t.name
+                FROM tags t
+                JOIN idea_tags it ON it.tag_id = t.tag_id
+                WHERE it.idea_id = ?
+                ORDER BY t.name
+                """,
+                (row["idea_id"],),
+            )
+            results.append(
+                IdeaSearchResult(
+                    idea_id=row["idea_id"],
+                    body=row["body"],
+                    tags=[tag_row["name"] for tag_row in tag_rows],
+                )
+            )
+        return results
+    finally:
+        conn.close()
+
+
+@app.get("/api/ideas/suggest", response_model=list[IdeaSearchResult])
+def suggest_ideas(
+    keyword: str | None = None,
+    tags: str | None = None,
+) -> list[IdeaSearchResult]:
+    return search_ideas(keyword=keyword, tags=tags, status="active")
+
+
 @app.get("/api/ideas/{idea_id}", response_model=Idea)
 def get_idea(idea_id: int) -> Idea:
     conn = get_connection()
@@ -242,61 +300,3 @@ def update_status(idea_id: int, status: str = Query(..., pattern="^(active|execu
         return serialize_idea(conn, idea_row)
     finally:
         conn.close()
-
-
-@app.get("/api/ideas/search", response_model=list[IdeaSearchResult])
-def search_ideas(
-    keyword: str | None = None,
-    tags: str | None = None,
-    status: str = "active",
-) -> list[IdeaSearchResult]:
-    conn = get_connection()
-    try:
-        tag_list = [tag.strip() for tag in tags.split(",")] if tags else []
-        tag_list = [tag for tag in tag_list if tag]
-        params: list = [status]
-        query = "SELECT DISTINCT i.idea_id, i.body FROM ideas i WHERE i.status = ?"
-        if keyword:
-            query += " AND i.body LIKE ?"
-            params.append(f"%{keyword}%")
-        if tag_list:
-            for tag in tag_list:
-                query += (
-                    " AND EXISTS ("
-                    "SELECT 1 FROM idea_tags it JOIN tags t ON t.tag_id = it.tag_id "
-                    "WHERE it.idea_id = i.idea_id AND t.name = ?)"
-                )
-                params.append(tag)
-        query += " ORDER BY i.updated_at DESC"
-        rows = fetch_all(conn, query, params)
-        results: list[IdeaSearchResult] = []
-        for row in rows:
-            tag_rows = fetch_all(
-                conn,
-                """
-                SELECT t.name
-                FROM tags t
-                JOIN idea_tags it ON it.tag_id = t.tag_id
-                WHERE it.idea_id = ?
-                ORDER BY t.name
-                """,
-                (row["idea_id"],),
-            )
-            results.append(
-                IdeaSearchResult(
-                    idea_id=row["idea_id"],
-                    body=row["body"],
-                    tags=[tag_row["name"] for tag_row in tag_rows],
-                )
-            )
-        return results
-    finally:
-        conn.close()
-
-
-@app.get("/api/ideas/suggest", response_model=list[IdeaSearchResult])
-def suggest_ideas(
-    keyword: str | None = None,
-    tags: str | None = None,
-) -> list[IdeaSearchResult]:
-    return search_ideas(keyword=keyword, tags=tags, status="active")
